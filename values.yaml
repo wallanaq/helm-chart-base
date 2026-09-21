@@ -1,0 +1,243 @@
+# Default values for base-webapp.
+# This chart is application-agnostic: these defaults deploy nothing
+# meaningful on their own. Pair this chart with an application-specific
+# values file (an app's own infra/helm/values.yaml, layered on top via
+# "helm template/install -f") that sets at least image.repository,
+# nameOverride, and any app-specific env/probes.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+
+# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+image:
+  # Application-specific. Must be set by the consuming values file.
+  repository: ""
+  # This sets the pull policy for images.
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+# This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets: []
+# This is to override the chart name.
+nameOverride: ""
+fullnameOverride: ""
+
+# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # Specifies whether a service account should be created.
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account.
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template.
+  name: ""
+
+# This is for setting Kubernetes Annotations to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# This is for setting Kubernetes Labels to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+# Application-specific (e.g. the uid baked into the app's image). Left empty here.
+securityContext: {}
+  # runAsNonRoot: true
+  # runAsUser: 1000
+  # allowPrivilegeEscalation: false
+  # capabilities:
+  #   drop:
+  #   - ALL
+
+# Application-specific environment variables. Empty by default.
+env: []
+  # - name: SOME_ENV_VAR
+  #   value: some-value
+
+# Name of an existing Secret whose keys are all injected as env vars via
+# envFrom. Empty by default -- the chart doesn't require a Secret to exist
+# unless a consuming values file sets this. Use this for credentials;
+# keep non-sensitive connection metadata in "env" above instead.
+secretName: ""
+
+# Injects Pod identity via the Kubernetes Downward API (not user-supplied
+# values, unlike "env" above -- resolved per-Pod-instance by Kubernetes
+# itself). Off by default: this is an observability aid for watching traffic
+# distribution during rollouts (canary/blue-green), not a production-default
+# feature.
+podInfo:
+  # Adds a POD_NAME env var (from metadata.name) to the container. The app
+  # is expected to surface it however it needs to (e.g. an X-Pod-Name
+  # response header).
+  enabled: false
+
+# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  type: ClusterIP
+  # Common default for containerized HTTP services; override per-application.
+  port: 8080
+
+# -- Expose the service via gateway-api HTTPRoute. This chart uses Gateway API
+# exclusively for ingress (no Kubernetes Ingress resource/template).
+# Requires Gateway API resources and a controller installed within the cluster
+# (see: https://gateway-api.sigs.k8s.io/guides/)
+httpRoute:
+  # HTTPRoute enabled.
+  enabled: false
+  # HTTPRoute annotations.
+  annotations: {}
+  # Which Gateways this Route is attached to.
+  parentRefs:
+  - name: istio-gateway
+    namespace: istio-system
+    sectionName: http
+  # Hostnames to match. Leave empty to auto-derive "<fullname>.<domain>"
+  # (e.g. an app named "qrcode-api" gets "qrcode-api.k8s.orb.local"), matching
+  # the wildcard hostname on the Gateway's listener. Set explicitly to override.
+  hostnames: []
+  # Base domain used to auto-derive the hostname above when hostnames is empty.
+  # Must match the wildcard hostname configured on the referenced Gateway's listener.
+  domain: k8s.orb.local
+  # List of rules and filters applied.
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+  #   filters:
+  #   - type: RequestHeaderModifier
+  #     requestHeaderModifier:
+  #       set:
+  #       - name: My-Overwrite-Header
+  #         value: this-is-the-only-value
+  #       remove:
+  #       - User-Agent
+  # - matches:
+  #   - path:
+  #       type: PathPrefix
+  #       value: /echo
+  #     headers:
+  #     - name: version
+  #       value: v2
+
+# -- Istio mTLS for this workload.
+# Requires Istio in the namespace (ambient or sidecar). In ambient mode
+# traffic is already encrypted at L4 by ztunnel; "enabled" below just makes
+# plaintext connections rejected outright instead of merely tolerated.
+mtls:
+  # Enforce strict mTLS via a PeerAuthentication.
+  enabled: false
+  # STRICT rejects plaintext; PERMISSIVE accepts both mTLS and plaintext.
+  mode: STRICT
+  # Restrict which callers may reach this workload via an Istio
+  # AuthorizationPolicy, rendered as action: DENY + source.notPrincipals --
+  # only the SPIFFE principals listed here are allowed through, e.g.
+  # "cluster.local/ns/qrcode-api/sa/some-other-app". Only takes effect
+  # when "enabled" above is also true: notPrincipals matches against
+  # source.principal, which is only populated by an actual mTLS handshake.
+  # With mTLS not enforced (or PERMISSIVE), a plaintext caller has no
+  # principal at all, and Istio's evaluation of notPrincipals against an
+  # empty principal is exactly the kind of edge case this chart avoids by
+  # requiring both fields together, rather than silently creating a policy
+  # that looks like it restricts access but may not reliably do so.
+  allowedPrincipals: []
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+# Generic default path; override per-application (e.g. a framework-specific health endpoint).
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+
+# -- Canary deployments via Argo Rollouts (must already be installed in the
+# cluster, along with its Gateway API traffic-routing plugin -- see
+# infra/kubernetes/argo-rollouts/). Off by default, same opt-in pattern as
+# mtls/podInfo above.
+#
+# When enabled, this chart renders a Rollout instead of a Deployment, a
+# stable/canary Service pair instead of one Service, and a weighted
+# HTTPRoute (100/0 at rest) instead of a single backendRef. If autoscaling
+# is also enabled, the HorizontalPodAutoscaler targets the Rollout instead
+# of the Deployment.
+#
+# Automated analysis (AnalysisTemplate) is available once a metrics backend
+# (Prometheus) is installed -- see infra/kubernetes/prometheus/ -- but this
+# chart stays app-agnostic and doesn't template an AnalysisTemplate itself:
+# what counts as "successful" is workload-specific business logic (the
+# PromQL query, the metric labels), not something a generic base chart
+# should own. A consuming values file (e.g. qrcode-api's, see
+# k8s-deployment-strategy-gitops/environments/dev/values/qrcode-api.yaml
+# for a real, working example) supplies its own AnalysisTemplate alongside
+# its other resources and references it by name here, replacing an
+# indefinite manual pause: {} with a timed pause backed by that analysis --
+# a human can still promote/abort manually at any point regardless.
+rollout:
+  enabled: false
+  # Canary steps (setWeight/pause/analysis/etc.), passed through to
+  # spec.strategy.canary.steps as-is. Empty by default is intentional, not
+  # an oversight: per Argo Rollouts' own docs, an omitted/empty steps list
+  # makes the canary strategy mimic a normal rolling update (maxSurge/
+  # maxUnavailable), so "rollout.enabled: true" with no steps is a safe,
+  # low-drama default rather than a foot-gun.
+  steps: []
+  # - setWeight: 20
+  # - pause: {duration: 60s}
+  # - analysis:
+  #     templates:
+  #     - templateName: my-analysis-template
+  #     args:
+  #     - name: service-name
+  #       value: my-app-canary
+  # - setWeight: 50
+  # - pause: {duration: 60s}
+
+# This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+  # - name: foo
+  #   secret:
+  #     secretName: mysecret
+  #     optional: false
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+  # - name: foo
+  #   mountPath: "/etc/foo"
+  #   readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

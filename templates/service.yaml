@@ -1,0 +1,56 @@
+{{- if .Values.rollout.enabled }}
+{{- /*
+Rollout mode needs two Services with the *same* baseline selector as a
+normal Deployment -- Argo Rollouts itself patches each Service's selector at
+runtime (adding rollouts-pod-template-hash) to point at the right
+ReplicaSet as a canary progresses. The chart's job is only to create both
+Services; it doesn't manage the hash-based split.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "base-webapp.fullname" . }}-stable
+  labels:
+    {{- include "base-webapp.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "base-webapp.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "base-webapp.fullname" . }}-canary
+  labels:
+    {{- include "base-webapp.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "base-webapp.selectorLabels" . | nindent 4 }}
+{{- else }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "base-webapp.fullname" . }}
+  labels:
+    {{- include "base-webapp.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "base-webapp.selectorLabels" . | nindent 4 }}
+{{- end }}

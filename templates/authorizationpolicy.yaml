@@ -1,0 +1,18 @@
+{{- if and .Values.mtls.enabled .Values.mtls.allowedPrincipals -}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "base-webapp.fullname" . }}
+  labels:
+    {{- include "base-webapp.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "base-webapp.selectorLabels" . | nindent 6 }}
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              {{- toYaml .Values.mtls.allowedPrincipals | nindent 14 }}
+{{- end }}

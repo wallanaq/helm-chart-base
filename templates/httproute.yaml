@@ -1,0 +1,57 @@
+{{- if .Values.httpRoute.enabled -}}
+{{- $fullName := include "base-webapp.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
+{{- $hostnames := .Values.httpRoute.hostnames -}}
+{{- if not $hostnames -}}
+{{- $hostnames = list (printf "%s.%s" $fullName .Values.httpRoute.domain) -}}
+{{- end -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "base-webapp.labels" . | nindent 4 }}
+  {{- with .Values.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- with .Values.httpRoute.parentRefs }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+  hostnames:
+    {{- toYaml $hostnames | nindent 4 }}
+  rules:
+    {{- range .Values.httpRoute.rules }}
+    {{- with .matches }}
+    - matches:
+      {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .filters }}
+      filters:
+      {{- toYaml . | nindent 8 }}
+    {{- end }}
+      backendRefs:
+      {{- if $.Values.rollout.enabled }}
+        {{- /*
+        Baseline weights before any rollout is in progress: all traffic to
+        stable, none to canary. This is the chart's own rendered starting
+        state -- Argo Rollouts takes over mutating these weights once a
+        canary actually starts. Getting this wrong (e.g. 50/50 at rest)
+        would mean canary infrastructure existing without an active rollout
+        still silently serving live traffic to an old/empty canary Service.
+        */}}
+        - name: {{ $fullName }}-stable
+          port: {{ $svcPort }}
+          weight: 100
+        - name: {{ $fullName }}-canary
+          port: {{ $svcPort }}
+          weight: 0
+      {{- else }}
+        - name: {{ $fullName }}
+          port: {{ $svcPort }}
+          weight: 1
+      {{- end }}
+    {{- end }}
+{{- end }}

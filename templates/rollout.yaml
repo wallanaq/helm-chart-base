@@ -1,0 +1,41 @@
+{{- if .Values.rollout.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "base-webapp.fullname" . }}
+  labels:
+    {{- include "base-webapp.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "base-webapp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "base-webapp.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "base-webapp.podSpec" . | nindent 6 }}
+  strategy:
+    canary:
+      canaryService: {{ include "base-webapp.fullname" . }}-canary
+      stableService: {{ include "base-webapp.fullname" . }}-stable
+      trafficRouting:
+        plugins:
+          argoproj-labs/gatewayAPI:
+            httpRoute: {{ include "base-webapp.fullname" . }}
+            namespace: {{ .Release.Namespace }}
+      {{- if .Values.rollout.steps }}
+      steps:
+        {{- toYaml .Values.rollout.steps | nindent 8 }}
+      {{- end }}
+{{- end }}
