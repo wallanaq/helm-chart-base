@@ -67,17 +67,6 @@ env: []
 # keep non-sensitive connection metadata in "env" above instead.
 secretName: ""
 
-# Injects Pod identity via the Kubernetes Downward API (not user-supplied
-# values, unlike "env" above -- resolved per-Pod-instance by Kubernetes
-# itself). Off by default: this is an observability aid for watching traffic
-# distribution during rollouts (canary/blue-green), not a production-default
-# feature.
-podInfo:
-  # Adds a POD_NAME env var (from metadata.name) to the container. The app
-  # is expected to surface it however it needs to (e.g. an X-Pod-Name
-  # response header).
-  enabled: false
-
 # This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
 service:
   # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
@@ -176,7 +165,7 @@ readinessProbe:
 # -- Canary deployments via Argo Rollouts (must already be installed in the
 # cluster, along with its Gateway API traffic-routing plugin -- see
 # infra/kubernetes/argo-rollouts/). Off by default, same opt-in pattern as
-# mtls/podInfo above.
+# mtls above.
 #
 # When enabled, this chart renders a Rollout instead of a Deployment, a
 # stable/canary Service pair instead of one Service, and a weighted

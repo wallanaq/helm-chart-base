@@ -28,20 +28,48 @@ helm-chart-base/
 
 ## Publishing
 
+The chart is published to two places, independently.
+
+### Local Harbor (by hand)
+
 ```bash
 HARBOR_ADMIN_PASSWORD=... make publish-chart
 ```
 
-Packages the chart and pushes it to Harbor (`oci://harbor.k8s.orb.local/charts/base-webapp`)
-as an OCI artifact, plain HTTP (no TLS) -- this is a local OrbStack lab cluster, not a
-public registry. `verify-chart-published` runs automatically afterward, diffing the
-freshly-published artifact's rendered templates against the local working tree and failing
-loudly on any mismatch (a template edited without a matching version bump would otherwise
-ship silently under a stale tag).
+Packages the chart and pushes it to the local Harbor
+(`oci://harbor.k8s.orb.local/charts/base-webapp`) as an OCI artifact, plain HTTP (no TLS) --
+this is a local OrbStack lab cluster, not a public registry. Override the target with
+`HARBOR_HOST`, `HARBOR_CHARTS_PROJECT` and `HARBOR_ADMIN_USER`.
+
+`make verify-chart-published` diffs the rendered templates of what Harbor has at the local
+`Chart.yaml` version against the working tree and fails loudly on a mismatch (a template
+edited without a matching version bump would otherwise ship silently under a stale tag).
+It's opt-in after a publish (`make publish-chart VERIFY=true`) and most useful run on its
+own *before* publishing.
 
 Harbor itself is **not** owned by this repo -- it's platform infrastructure, installed and
 managed elsewhere (currently the `k8s-deployment-strategy` monorepo's Makefile / Argo CD;
 see that repo). This repo only needs to know Harbor's address to publish to.
+
+### GHCR (GitHub Actions)
+
+`.github/workflows/publish-chart.yaml` publishes to `oci://ghcr.io/<owner>/charts/base-webapp`
+when a version tag is pushed. The tag must match `version:` in `Chart.yaml`. `make release`
+keeps the two in sync:
+
+```bash
+make release VERSION=0.8.0      # sets Chart.yaml, lints, commits, tags v0.8.0 (local only)
+git push origin main v0.8.0     # pushing the tag triggers the GHCR workflow
+make publish-chart              # optional: also publish this version to the local Harbor
+```
+
+`make release` requires a clean working tree on `main`, a plain `X.Y.Z` version that is not
+lower than the current one, and a tag that doesn't exist yet. If `VERSION` already equals
+`Chart.yaml`'s version, it only creates the tag.
+
+The workflow authenticates with the built-in `GITHUB_TOKEN`. New GHCR packages start
+private; make the package public once in its GitHub settings if consumers need anonymous
+pulls.
 
 ## Consumers
 

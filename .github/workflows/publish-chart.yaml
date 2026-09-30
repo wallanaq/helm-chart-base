@@ -1,0 +1,45 @@
+name: Publish chart to GHCR
+
+# Releases are cut by pushing a tag that matches Chart.yaml's version, e.g.
+# version: 0.8.0 -> git tag v0.8.0 && git push origin v0.8.0
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches Chart.yaml version
+        run: |
+          chart_version=$(grep '^version:' Chart.yaml | awk '{print $2}')
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$chart_version" != "$tag_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match Chart.yaml version ${chart_version}"
+            exit 1
+          fi
+
+      - name: Lint and render
+        run: |
+          helm version
+          helm lint .
+          helm template release . > /dev/null
+
+      - name: Package
+        run: helm package . -d dist
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Push
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          helm push dist/*.tgz "oci://ghcr.io/${owner}/charts"
+          echo "Published oci://ghcr.io/${owner}/charts"

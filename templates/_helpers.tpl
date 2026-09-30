@@ -101,17 +101,9 @@ containers:
       - secretRef:
           name: {{ .Values.secretName }}
     {{- end }}
-    {{- if or .Values.podInfo.enabled .Values.env }}
+    {{- with .Values.env }}
     env:
-      {{- if .Values.podInfo.enabled }}
-      - name: POD_NAME
-        valueFrom:
-          fieldRef:
-            fieldPath: metadata.name
-      {{- end }}
-      {{- with .Values.env }}
       {{- toYaml . | nindent 6 }}
-      {{- end }}
     {{- end }}
     {{- with .Values.livenessProbe }}
     livenessProbe:

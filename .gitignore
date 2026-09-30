@@ -1,4 +1,51 @@
-/dist/
+# Build output (helm package -d dist)
+dist/
+*.tgz
 
-# IDE
-.vscode
+# Helm
+charts/*.tgz
+Chart.lock
+.helm/
+
+# Secrets / local config -- never commit credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+secrets.yaml
+secrets.*.yaml
+*.secret.yaml
+
+# Local values overrides
+values.local.yaml
+values.*.local.yaml
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Temp / backup
+*.tmp
+*.bak
+*.orig
+*.rej
+*.log
+
+# Claude Code
+.claude/

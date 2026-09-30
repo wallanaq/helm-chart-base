@@ -1,28 +1,39 @@
 # ------------------------------------------------------------------------------
-# base-webapp -- package + publish to Harbor (OCI)
+# base-webapp -- package + publish to a local Harbor (OCI)
 # ------------------------------------------------------------------------------
-# This Makefile's whole job is packaging and publishing this one chart. It
-# does not install/bootstrap Harbor itself (that stays platform
-# infrastructure, owned by the k8s-deployment-strategy monorepo) -- this repo
-# only needs to know Harbor's address to publish to.
+# This Makefile's whole job is packaging and publishing this one chart to a
+# LOCAL Harbor. It does not install/bootstrap Harbor itself (that stays
+# platform infrastructure, owned by the k8s-deployment-strategy monorepo) --
+# this repo only needs to know Harbor's address to publish to.
 #
 # GitHub Actions' hosted runners can't reach $(HARBOR_HOST) (it's only
 # routable inside the local OrbStack cluster), so publish-chart is run by
-# hand from a machine that can. Argo CD (in the consuming k8s-deployment-
-# strategy-gitops repo) pulls the published chart straight from Harbor
-# in-cluster.
+# hand from a machine that can. The public counterpart -- publishing to GHCR
+# -- lives in .github/workflows/publish-chart.yaml and runs on version tags.
+# Argo CD (in the consuming k8s-deployment-strategy-gitops repo) pulls the
+# chart straight from Harbor in-cluster.
 
+# Local Harbor this Makefile publishes to. Override to target another
+# instance, e.g. `make publish-chart HARBOR_HOST=harbor.example.local`.
+# Plain HTTP on purpose (see the --plain-http flags below).
 HARBOR_HOST           ?= harbor.k8s.orb.local
 HARBOR_CHARTS_PROJECT ?= charts
+HARBOR_ADMIN_USER     ?= admin
 # No default on purpose -- a real value here would be a plaintext credential
 # committed to git. Pass it on the command line or export it in your shell,
 # e.g. `HARBOR_ADMIN_PASSWORD=... make publish-chart`.
 HARBOR_ADMIN_PASSWORD ?=
 
+# Set VERIFY=true to also run verify-chart-published right after publishing.
+# Off by default: right after a push it compares what was just pushed against
+# itself, so it's most useful run on its own, *before* publishing, to catch a
+# template edit that wasn't paired with a version bump.
+VERIFY ?= false
+
 CHART_DIR      ?= .
 CHART_DIST_DIR ?= dist
 
-.PHONY: help harbor-chart-project package-chart publish-chart verify-chart-published
+.PHONY: help harbor-chart-project release package-chart publish-chart verify-chart-published
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -36,18 +47,45 @@ help: ## Show this help message
 # public). Creating still needs admin auth; reading the published chart doesn't.
 harbor-chart-project: ## Create the Harbor "charts" project for chart artifacts (idempotent, public)
 	@echo "==> Checking for Harbor project '$(HARBOR_CHARTS_PROJECT)'..."
-	@count=$$(curl -sf -u admin:$(HARBOR_ADMIN_PASSWORD) \
+	@count=$$(curl -sf -u $(HARBOR_ADMIN_USER):$(HARBOR_ADMIN_PASSWORD) \
 		"http://$(HARBOR_HOST)/api/v2.0/projects?name=$(HARBOR_CHARTS_PROJECT)" | jq 'length'); \
 	if [ "$$count" -gt 0 ]; then \
 		echo "==> Project '$(HARBOR_CHARTS_PROJECT)' already exists, skipping."; \
 	else \
 		echo "==> Creating project '$(HARBOR_CHARTS_PROJECT)'..."; \
-		curl -sf -u admin:$(HARBOR_ADMIN_PASSWORD) \
+		curl -sf -u $(HARBOR_ADMIN_USER):$(HARBOR_ADMIN_PASSWORD) \
 			-X POST "http://$(HARBOR_HOST)/api/v2.0/projects" \
 			-H "Content-Type: application/json" \
 			-d '{"project_name": "$(HARBOR_CHARTS_PROJECT)", "public": true}'; \
 		echo "==> Project '$(HARBOR_CHARTS_PROJECT)' created."; \
 	fi
+
+# Cuts a release locally: sets Chart.yaml's version, lints, commits and tags
+# vVERSION. It never pushes -- pushing the tag is what triggers the GHCR
+# workflow, so that stays an explicit, separate step. If VERSION already equals
+# Chart.yaml's version (bumped by hand in an earlier commit), only the tag is
+# created. Usage: `make release VERSION=0.8.0`.
+release: ## Bump Chart.yaml to VERSION, lint, commit and tag vVERSION locally (does not push)
+	@if [ -z "$(VERSION)" ]; then echo "VERSION is required, e.g. make release VERSION=0.8.0"; exit 1; fi
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "VERSION '$(VERSION)' is not a plain semver (X.Y.Z)"; exit 1; }
+	@if [ -n "$$(git status --porcelain)" ]; then echo "Working tree is not clean -- commit or stash your changes first."; exit 1; fi
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" != "main" ]; then echo "Releases are cut from main (currently on '$$branch')."; exit 1; fi
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then echo "Tag v$(VERSION) already exists."; exit 1; fi
+	@current=$$(grep '^version:' $(CHART_DIR)/Chart.yaml | awk '{print $$2}'); \
+	if [ "$$(printf '%s\n%s\n' "$$current" "$(VERSION)" | sort -V | tail -n1)" != "$(VERSION)" ]; then \
+		echo "VERSION $(VERSION) is lower than the current Chart.yaml version $$current."; exit 1; \
+	fi; \
+	if [ "$$current" != "$(VERSION)" ]; then \
+		sed -i.bak "s/^version:.*/version: $(VERSION)/" $(CHART_DIR)/Chart.yaml && rm -f $(CHART_DIR)/Chart.yaml.bak; \
+	fi
+	@helm lint $(CHART_DIR)
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		git add $(CHART_DIR)/Chart.yaml && git commit -m "chore: release v$(VERSION)"; \
+	fi
+	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@echo "==> Tagged v$(VERSION) locally. To publish to GHCR:"
+	@echo "    git push origin main v$(VERSION)"
 
 package-chart: ## Package this chart into dist/base-webapp-<version>.tgz
 	@mkdir -p $(CHART_DIST_DIR)
@@ -65,9 +103,9 @@ publish-chart: package-chart harbor-chart-project ## Push the packaged chart to 
 	chart_version=$$(basename $$chart_tgz .tgz | sed "s/^$$chart_name-//"); \
 	echo "==> Publishing $$chart_tgz to oci://$(HARBOR_HOST)/$(HARBOR_CHARTS_PROJECT)..."; \
 	helm push $$chart_tgz "oci://$(HARBOR_HOST)/$(HARBOR_CHARTS_PROJECT)" \
-		--plain-http --username admin --password $(HARBOR_ADMIN_PASSWORD); \
+		--plain-http --username $(HARBOR_ADMIN_USER) --password $(HARBOR_ADMIN_PASSWORD); \
 	echo "==> Published: oci://$(HARBOR_HOST)/$(HARBOR_CHARTS_PROJECT)/$$chart_name:$$chart_version"
-	@$(MAKE) verify-chart-published
+	@if [ "$(VERIFY)" = "true" ]; then $(MAKE) verify-chart-published; fi
 
 # Catches drift by re-rendering whatever Harbor has at the local Chart.yaml
 # version and diffing it against the local working tree -- if someone edited
@@ -84,7 +122,7 @@ verify-chart-published: ## Diff local chart templates against the matching versi
 	echo "==> Checking whether $$chart_name:$$chart_version is already published in Harbor..."; \
 	if helm pull "oci://$(HARBOR_HOST)/$(HARBOR_CHARTS_PROJECT)/$$chart_name" \
 		--version "$$chart_version" --plain-http \
-		--username admin --password $(HARBOR_ADMIN_PASSWORD) \
+		--username $(HARBOR_ADMIN_USER) --password $(HARBOR_ADMIN_PASSWORD) \
 		-d "$$tmp_dir" >/dev/null 2>&1; then \
 		echo "==> Found published $$chart_name:$$chart_version -- diffing rendered templates against the local working tree..."; \
 		mkdir -p "$$tmp_dir/extracted"; \

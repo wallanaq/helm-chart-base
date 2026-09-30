@@ -21,3 +21,9 @@
 .idea/
 *.tmproj
 .vscode/
+
+# Repo tooling that is not part of the chart
+Makefile
+dist/
+.github/
+.claude/
