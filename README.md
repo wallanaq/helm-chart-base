@@ -63,6 +63,10 @@ git push origin main v0.8.0     # pushing the tag triggers the GHCR workflow
 make publish-chart              # optional: also publish this version to the local Harbor
 ```
 
+The workflow also runs when `.github/workflows/publish-chart.yaml` changes on `main`, so
+pipeline edits can be tried without a new tag. Those runs push only if `Chart.yaml`'s
+version isn't in GHCR yet; an already-published version is never overwritten.
+
 `make release` requires a clean working tree on `main`, a plain `X.Y.Z` version that is not
 lower than the current one, and a tag that doesn't exist yet. If `VERSION` already equals
 `Chart.yaml`'s version, it only creates the tag.
