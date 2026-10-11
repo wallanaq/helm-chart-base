@@ -7,6 +7,7 @@ release:
 set:
   image.repository: nginx
   image.tag: "1.27"
+  httpRoute.enabled: true
 tests:
   - it: is not rendered by default
     asserts:
@@ -103,3 +104,11 @@ tests:
           value:
             - name: LOG_LEVEL
               value: info
+
+  - it: fails when the HTTPRoute it shifts traffic through is not enabled
+    set:
+      rollout.enabled: true
+      httpRoute.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "rollout.enabled requires httpRoute.enabled: the canary shifts traffic by editing the HTTPRoute this chart renders"

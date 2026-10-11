@@ -1,0 +1,5 @@
+# Must fail: the Rollout shifts traffic by editing the chart's HTTPRoute.
+image:
+  repository: nginx
+rollout:
+  enabled: true

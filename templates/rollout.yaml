@@ -1,4 +1,7 @@
 {{- if .Values.rollout.enabled }}
+{{- if not .Values.httpRoute.enabled }}
+{{- fail "rollout.enabled requires httpRoute.enabled: the canary shifts traffic by editing the HTTPRoute this chart renders" }}
+{{- end }}
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
