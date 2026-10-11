@@ -1,0 +1,68 @@
+suite: service
+templates:
+  - service.yaml
+release:
+  name: demo
+set:
+  image.repository: nginx
+tests:
+  - it: renders a single Service by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: demo-base-webapp
+      - equal:
+          path: spec.ports[0]
+          value:
+            port: 8080
+            targetPort: http
+            protocol: TCP
+            name: http
+
+  - it: honours service.type and service.port
+    set:
+      service.type: NodePort
+      service.port: 9090
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].port
+          value: 9090
+
+  - it: renders a stable/canary pair instead when the rollout is enabled
+    set:
+      rollout.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: demo-base-webapp-stable
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: demo-base-webapp-canary
+        documentIndex: 1
+
+  - it: gives stable and canary the same baseline selector
+    set:
+      rollout.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: base-webapp
+            app.kubernetes.io/instance: demo
+        documentIndex: 0
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: base-webapp
+            app.kubernetes.io/instance: demo
+        documentIndex: 1

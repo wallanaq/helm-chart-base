@@ -1,0 +1,63 @@
+# The canary only works if four templates agree on names. A rename in one of
+# them (Rollout, Services, HTTPRoute) that misses the others breaks traffic
+# shifting without any schema error, so assert the wiring across templates.
+suite: canary wiring
+templates:
+  - rollout.yaml
+  - service.yaml
+  - httproute.yaml
+  - hpa.yaml
+release:
+  name: demo
+  namespace: apps
+set:
+  image.repository: nginx
+  rollout.enabled: true
+  httpRoute.enabled: true
+  autoscaling.enabled: true
+  fullnameOverride: custom
+tests:
+  - it: derives every name from fullname
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom
+        template: rollout.yaml
+      - equal:
+          path: spec.strategy.canary.stableService
+          value: custom-stable
+        template: rollout.yaml
+      - equal:
+          path: spec.strategy.canary.canaryService
+          value: custom-canary
+        template: rollout.yaml
+      - equal:
+          path: spec.strategy.canary.trafficRouting.plugins["argoproj-labs/gatewayAPI"].httpRoute
+          value: custom
+        template: rollout.yaml
+      - equal:
+          path: metadata.name
+          value: custom-stable
+        template: service.yaml
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: custom-canary
+        template: service.yaml
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: custom
+        template: httproute.yaml
+      - equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: custom-stable
+        template: httproute.yaml
+      - equal:
+          path: spec.rules[0].backendRefs[1].name
+          value: custom-canary
+        template: httproute.yaml
+      - equal:
+          path: spec.scaleTargetRef.name
+          value: custom
+        template: hpa.yaml

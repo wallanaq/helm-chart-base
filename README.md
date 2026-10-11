@@ -24,6 +24,7 @@ helm-chart-base/
   values.schema.json
   templates/
   ci/              # one values file per chart capability, used by `make test`
+  tests/           # helm-unittest suites, run by `make test`
   Makefile
 ```
 
@@ -33,23 +34,31 @@ helm-chart-base/
 make test
 ```
 
-Static tests, no cluster needed. Every `ci/*-values.yaml` scenario (minimal, HPA,
-HTTPRoute, mTLS, canary, canary with analysis + everything on) is linted, rendered with
-`helm template` and validated with [kubeconform][kubeconform] in strict mode against the
-Kubernetes schemas plus the CRD schemas for HTTPRoute, Rollout, PeerAuthentication and
-AuthorizationPolicy (from the [datree CRDs-catalog][crds-catalog], pinned to a commit via
-`CRD_CATALOG_REF`). A kind without a schema fails instead of being skipped. Every
-`ci/invalid/*.yaml` must be *rejected* by the chart (template guards or
-`values.schema.json`).
+Static tests, no cluster needed, in two parts:
 
-kubeconform runs in a container (`KUBECONFORM_IMAGE`), so only `helm` and `docker` are
-needed locally. A new chart capability should come with a new `ci/<name>-values.yaml`.
+- **Scenarios (`ci/`)**: every `ci/*-values.yaml` (minimal, HPA, HTTPRoute, mTLS, canary,
+  canary with analysis + everything on) is linted, rendered with `helm template` and
+  validated with [kubeconform][kubeconform] in strict mode against the Kubernetes schemas
+  plus the CRD schemas for HTTPRoute, Rollout, PeerAuthentication and AuthorizationPolicy
+  (from the [datree CRDs-catalog][crds-catalog], pinned to a commit via `CRD_CATALOG_REF`).
+  A kind without a schema fails instead of being skipped. Every `ci/invalid/*.yaml` must be
+  *rejected* by the chart (template guards or `values.schema.json`).
+- **Unit tests (`tests/`)**: [helm-unittest][helm-unittest] suites assert on the rendered
+  output: Deployment vs Rollout, stable/canary Services, the 100/0 baseline weights, HPA
+  target, mTLS/AuthorizationPolicy conditions, and that Rollout, Services, HTTPRoute and HPA
+  agree on names (`tests/canary_wiring_test.yaml`). A run that executes zero tests fails.
 
-This validates shape, not behavior: it can't tell that the Rollout controller actually
-shifts traffic. That needs a real cluster (Istio, Argo Rollouts, Prometheus).
+Both run in containers (`KUBECONFORM_IMAGE`, `HELM_UNITTEST_IMAGE`), so only `helm` and
+`docker` are needed locally. `make test-valid`, `make test-invalid` and `make test-unit`
+run the parts on their own. A new chart capability should come with a new
+`ci/<name>-values.yaml` and a suite in `tests/`.
+
+This validates shape and rendering, not behavior: it can't tell that the Rollout controller
+actually shifts traffic. That needs a real cluster (Istio, Argo Rollouts, Prometheus).
 
 [kubeconform]: https://github.com/yannh/kubeconform
 [crds-catalog]: https://github.com/datreeio/CRDs-catalog
+[helm-unittest]: https://github.com/helm-unittest/helm-unittest
 
 ## Publishing
 

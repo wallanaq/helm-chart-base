@@ -1,0 +1,92 @@
+suite: peerauthentication
+templates:
+  - peerauthentication.yaml
+release:
+  name: demo
+set:
+  image.repository: nginx
+tests:
+  - it: is not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: enforces STRICT mTLS on this workload only
+    set:
+      mtls.enabled: true
+    asserts:
+      - isKind:
+          of: PeerAuthentication
+      - isAPIVersion:
+          of: security.istio.io/v1
+      - equal:
+          path: spec.mtls.mode
+          value: STRICT
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: base-webapp
+            app.kubernetes.io/instance: demo
+
+  - it: honours mtls.mode
+    set:
+      mtls.enabled: true
+      mtls.mode: PERMISSIVE
+    asserts:
+      - equal:
+          path: spec.mtls.mode
+          value: PERMISSIVE
+---
+suite: authorizationpolicy
+templates:
+  - authorizationpolicy.yaml
+release:
+  name: demo
+set:
+  image.repository: nginx
+tests:
+  - it: is not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: is not rendered with mtls enabled but no allowedPrincipals
+    set:
+      mtls.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: is not rendered with allowedPrincipals but mtls disabled
+    set:
+      mtls.allowedPrincipals:
+        - cluster.local/ns/caller/sa/caller-app
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: denies every caller that is not in allowedPrincipals
+    set:
+      mtls.enabled: true
+      mtls.allowedPrincipals:
+        - cluster.local/ns/caller/sa/caller-app
+        - cluster.local/ns/other/sa/other-app
+    asserts:
+      - isKind:
+          of: AuthorizationPolicy
+      - equal:
+          path: spec.action
+          value: DENY
+      - equal:
+          path: spec.rules
+          value:
+            - from:
+                - source:
+                    notPrincipals:
+                      - cluster.local/ns/caller/sa/caller-app
+                      - cluster.local/ns/other/sa/other-app
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: base-webapp
+            app.kubernetes.io/instance: demo

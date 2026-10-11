@@ -1,0 +1,128 @@
+suite: httproute
+templates:
+  - httproute.yaml
+release:
+  name: demo
+set:
+  image.repository: nginx
+tests:
+  - it: is not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a single-backend route with an auto-derived hostname
+    set:
+      httpRoute.enabled: true
+    asserts:
+      - isKind:
+          of: HTTPRoute
+      - isAPIVersion:
+          of: gateway.networking.k8s.io/v1
+      - equal:
+          path: spec.hostnames
+          value:
+            - demo-base-webapp.k8s.orb.local
+      - equal:
+          path: spec.parentRefs
+          value:
+            - name: istio-gateway
+              namespace: istio-system
+              sectionName: http
+      - equal:
+          path: spec.rules[0].backendRefs
+          value:
+            - name: demo-base-webapp
+              port: 8080
+              weight: 1
+
+  - it: derives the hostname from httpRoute.domain
+    set:
+      httpRoute.enabled: true
+      httpRoute.domain: example.test
+    asserts:
+      - equal:
+          path: spec.hostnames
+          value:
+            - demo-base-webapp.example.test
+
+  - it: prefers explicit hostnames over the derived one
+    set:
+      httpRoute.enabled: true
+      httpRoute.hostnames:
+        - a.example.test
+        - b.example.test
+    asserts:
+      - equal:
+          path: spec.hostnames
+          value:
+            - a.example.test
+            - b.example.test
+
+  - it: points backendRefs at the service port
+    set:
+      httpRoute.enabled: true
+      service.port: 9090
+    asserts:
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 9090
+
+  - it: starts a canary at 100% stable and 0% canary
+    set:
+      httpRoute.enabled: true
+      rollout.enabled: true
+    asserts:
+      - equal:
+          path: spec.rules[0].backendRefs
+          value:
+            - name: demo-base-webapp-stable
+              port: 8080
+              weight: 100
+            - name: demo-base-webapp-canary
+              port: 8080
+              weight: 0
+
+  - it: renders backendRefs for every rule, with matches and filters passed through
+    set:
+      httpRoute.enabled: true
+      httpRoute.rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /api
+          filters:
+            - type: RequestHeaderModifier
+              requestHeaderModifier:
+                set:
+                  - name: X-Env
+                    value: test
+    asserts:
+      - lengthEqual:
+          path: spec.rules
+          count: 2
+      - equal:
+          path: spec.rules[1].matches[0].path.value
+          value: /api
+      - equal:
+          path: spec.rules[1].filters[0].type
+          value: RequestHeaderModifier
+      - notExists:
+          path: spec.rules[0].filters
+      - equal:
+          path: spec.rules[1].backendRefs[0].name
+          value: demo-base-webapp
+
+  - it: applies annotations
+    set:
+      httpRoute.enabled: true
+      httpRoute.annotations:
+        note: hello
+    asserts:
+      - equal:
+          path: metadata.annotations.note
+          value: hello

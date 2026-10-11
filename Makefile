@@ -43,10 +43,12 @@ KUBERNETES_VERSION ?= 1.31.0
 # change can't break the build; bump it deliberately.
 CRD_CATALOG_REF    ?= 63669a570e231d4f1f8396d229a1de512bcf0a34
 CRD_SCHEMA_URL     ?= https://raw.githubusercontent.com/datreeio/CRDs-catalog/$(CRD_CATALOG_REF)/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+# helm-unittest suites live in tests/ (also run in a container).
+HELM_UNITTEST_IMAGE ?= helmunittest/helm-unittest:4.3.0-1.2.1
 CI_VALUES          ?= $(wildcard $(CHART_DIR)/ci/*-values.yaml)
 CI_INVALID_VALUES  ?= $(wildcard $(CHART_DIR)/ci/invalid/*.yaml)
 
-.PHONY: help test test-valid test-invalid harbor-chart-project release package-chart publish-chart verify-chart-published
+.PHONY: help test test-valid test-invalid test-unit harbor-chart-project release package-chart publish-chart verify-chart-published
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -55,8 +57,9 @@ help: ## Show this help message
 # Static tests, no cluster: every ci/*-values.yaml scenario must lint, render
 # and validate (kubeconform, strict, CRD schemas included -- a kind without a
 # schema fails instead of being skipped); every ci/invalid/*.yaml must be
-# rejected by the chart (template guard or values.schema.json).
-test: test-valid test-invalid ## Lint, render and schema-validate every ci/ scenario (no cluster; kubeconform via docker)
+# rejected by the chart (template guard or values.schema.json). Then the
+# helm-unittest suites in tests/ assert on the rendered output itself.
+test: test-valid test-invalid test-unit ## Run all static tests: ci/ scenarios (kubeconform) + tests/ unit tests (helm-unittest); docker only, no cluster
 
 test-valid:
 	@command -v docker >/dev/null || { echo "docker is required to run kubeconform"; exit 1; }
@@ -78,6 +81,14 @@ test-invalid:
 		fi; \
 		echo "==> rejected as expected: $$f"; \
 	done
+
+# Fails when no test ran at all: a green run with "0 total" proves nothing.
+test-unit:
+	@command -v docker >/dev/null || { echo "docker is required to run helm-unittest"; exit 1; }
+	@out=$$(docker run --rm -v "$(abspath $(CHART_DIR))":/apps:ro $(HELM_UNITTEST_IMAGE) . 2>&1); status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -Eq 'Tests:.* [1-9][0-9]* total' || { echo "!! helm-unittest ran zero tests"; exit 1; }
 
 # Public: anonymous pull is how both qrcode-api's Argo CD Application and this
 # monorepo's own local smoke-test target consume the published chart -- no
