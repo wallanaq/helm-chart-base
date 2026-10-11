@@ -15,7 +15,7 @@ where its source is maintained).
 ## What's here
 
 Just the chart itself, at the repo root (not nested under a `charts/` subfolder -- this
-repo's whole purpose is one chart), plus a lean `Makefile` to package and publish it:
+repo's whole purpose is one chart), plus a lean `Makefile` to test, package and publish it:
 
 ```
 helm-chart-base/
@@ -23,8 +23,33 @@ helm-chart-base/
   values.yaml
   values.schema.json
   templates/
+  ci/              # one values file per chart capability, used by `make test`
   Makefile
 ```
+
+## Testing
+
+```bash
+make test
+```
+
+Static tests, no cluster needed. Every `ci/*-values.yaml` scenario (minimal, HPA,
+HTTPRoute, mTLS, canary, canary with analysis + everything on) is linted, rendered with
+`helm template` and validated with [kubeconform][kubeconform] in strict mode against the
+Kubernetes schemas plus the CRD schemas for HTTPRoute, Rollout, PeerAuthentication and
+AuthorizationPolicy (from the [datree CRDs-catalog][crds-catalog], pinned to a commit via
+`CRD_CATALOG_REF`). A kind without a schema fails instead of being skipped. Every
+`ci/invalid/*.yaml` must be *rejected* by the chart (template guards or
+`values.schema.json`).
+
+kubeconform runs in a container (`KUBECONFORM_IMAGE`), so only `helm` and `docker` are
+needed locally. A new chart capability should come with a new `ci/<name>-values.yaml`.
+
+This validates shape, not behavior: it can't tell that the Rollout controller actually
+shifts traffic. That needs a real cluster (Istio, Argo Rollouts, Prometheus).
+
+[kubeconform]: https://github.com/yannh/kubeconform
+[crds-catalog]: https://github.com/datreeio/CRDs-catalog
 
 ## Publishing
 

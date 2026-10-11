@@ -1,0 +1,32 @@
+# Everything on at once: Rollout with steps + analysis, HPA targeting the
+# Rollout, weighted HTTPRoute, strict mTLS and caller restriction.
+image:
+  repository: nginx
+  tag: "1.27"
+env:
+  - name: LOG_LEVEL
+    value: info
+secretName: app-credentials
+httpRoute:
+  enabled: true
+rollout:
+  enabled: true
+  steps:
+    - setWeight: 20
+    - pause: {duration: 30s}
+    - analysis:
+        templates:
+          - templateName: success-rate
+        args:
+          - name: service-name
+            value: ci-canary
+    - setWeight: 50
+    - pause: {duration: 30s}
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+mtls:
+  enabled: true
+  allowedPrincipals:
+    - cluster.local/ns/caller/sa/caller-app

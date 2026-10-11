@@ -1,0 +1,6 @@
+# Must fail: values.schema.json restricts cpu quantity format.
+image:
+  repository: nginx
+resources:
+  requests:
+    cpu: lots

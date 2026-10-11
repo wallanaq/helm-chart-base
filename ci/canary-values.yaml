@@ -1,0 +1,9 @@
+# Argo Rollouts canary with no steps (behaves like a rolling update) +
+# stable/canary Services + weighted HTTPRoute at 100/0.
+image:
+  repository: nginx
+  tag: "1.27"
+httpRoute:
+  enabled: true
+rollout:
+  enabled: true

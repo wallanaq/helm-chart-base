@@ -1,8 +1,8 @@
 # ------------------------------------------------------------------------------
-# base-webapp -- package + publish to a local Harbor (OCI)
+# base-webapp -- test, package + publish to a local Harbor (OCI)
 # ------------------------------------------------------------------------------
-# This Makefile's whole job is packaging and publishing this one chart to a
-# LOCAL Harbor. It does not install/bootstrap Harbor itself (that stays
+# This Makefile tests this one chart (`make test`, no cluster needed) and
+# packages/publishes it to a LOCAL Harbor. It does not install/bootstrap Harbor itself (that stays
 # platform infrastructure, owned by the k8s-deployment-strategy monorepo) --
 # this repo only needs to know Harbor's address to publish to.
 #
@@ -33,11 +33,51 @@ VERIFY ?= false
 CHART_DIR      ?= .
 CHART_DIST_DIR ?= dist
 
-.PHONY: help harbor-chart-project release package-chart publish-chart verify-chart-published
+# `make test` -- kubeconform runs in a container, nothing to install locally.
+# Override KUBECONFORM_IMAGE to use another image/tag (any image whose
+# entrypoint is kubeconform).
+KUBECONFORM_IMAGE  ?= ghcr.io/yannh/kubeconform:v0.7.0
+KUBERNETES_VERSION ?= 1.31.0
+# CRD schemas for the non-core kinds the chart renders (HTTPRoute, Rollout,
+# PeerAuthentication, AuthorizationPolicy). Pinned to a commit so a catalog
+# change can't break the build; bump it deliberately.
+CRD_CATALOG_REF    ?= 63669a570e231d4f1f8396d229a1de512bcf0a34
+CRD_SCHEMA_URL     ?= https://raw.githubusercontent.com/datreeio/CRDs-catalog/$(CRD_CATALOG_REF)/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+CI_VALUES          ?= $(wildcard $(CHART_DIR)/ci/*-values.yaml)
+CI_INVALID_VALUES  ?= $(wildcard $(CHART_DIR)/ci/invalid/*.yaml)
+
+.PHONY: help test test-valid test-invalid harbor-chart-project release package-chart publish-chart verify-chart-published
 
 help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
+
+# Static tests, no cluster: every ci/*-values.yaml scenario must lint, render
+# and validate (kubeconform, strict, CRD schemas included -- a kind without a
+# schema fails instead of being skipped); every ci/invalid/*.yaml must be
+# rejected by the chart (template guard or values.schema.json).
+test: test-valid test-invalid ## Lint, render and schema-validate every ci/ scenario (no cluster; kubeconform via docker)
+
+test-valid:
+	@command -v docker >/dev/null || { echo "docker is required to run kubeconform"; exit 1; }
+	@test -n "$(CI_VALUES)" || { echo "No scenarios found in $(CHART_DIR)/ci/*-values.yaml"; exit 1; }
+	@for f in $(CI_VALUES); do \
+		echo "==> $$f"; \
+		helm lint $(CHART_DIR) -f $$f >/dev/null || { helm lint $(CHART_DIR) -f $$f; exit 1; }; \
+		helm template release $(CHART_DIR) -f $$f \
+			| docker run -i --rm $(KUBECONFORM_IMAGE) -strict -summary \
+				-kubernetes-version $(KUBERNETES_VERSION) \
+				-schema-location default -schema-location '$(CRD_SCHEMA_URL)' - \
+			|| exit 1; \
+	done
+
+test-invalid:
+	@for f in $(CI_INVALID_VALUES); do \
+		if helm template release $(CHART_DIR) -f $$f >/dev/null 2>&1; then \
+			echo "!! $$f rendered, but it must be rejected"; exit 1; \
+		fi; \
+		echo "==> rejected as expected: $$f"; \
+	done
 
 # Public: anonymous pull is how both qrcode-api's Argo CD Application and this
 # monorepo's own local smoke-test target consume the published chart -- no

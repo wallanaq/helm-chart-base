@@ -1,0 +1,4 @@
+# Must fail: values.schema.json caps replicaCount at 20.
+image:
+  repository: nginx
+replicaCount: 21

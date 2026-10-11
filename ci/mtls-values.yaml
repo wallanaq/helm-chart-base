@@ -1,0 +1,9 @@
+# PeerAuthentication + AuthorizationPolicy (needs both mtls.enabled and principals).
+image:
+  repository: nginx
+  tag: "1.27"
+mtls:
+  enabled: true
+  mode: STRICT
+  allowedPrincipals:
+    - cluster.local/ns/caller/sa/caller-app

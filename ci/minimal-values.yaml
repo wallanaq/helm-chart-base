@@ -1,0 +1,4 @@
+# Smallest valid install: Deployment + Service + ServiceAccount only.
+image:
+  repository: nginx
+  tag: "1.27"

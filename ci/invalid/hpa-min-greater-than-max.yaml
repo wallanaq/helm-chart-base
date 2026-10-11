@@ -1,0 +1,7 @@
+# Must fail: the template guards min <= max.
+image:
+  repository: nginx
+autoscaling:
+  enabled: true
+  minReplicas: 5
+  maxReplicas: 2

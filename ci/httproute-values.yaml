@@ -1,0 +1,24 @@
+# Deployment + Service + HTTPRoute (auto-derived hostname and explicit one).
+image:
+  repository: nginx
+  tag: "1.27"
+nameOverride: web
+httpRoute:
+  enabled: true
+  hostnames:
+    - web.example.test
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Env
+                value: ci
