@@ -8,6 +8,8 @@ name: Publish chart to GHCR
 # the tag trigger is unaffected. On those branch runs the chart is only pushed
 # if Chart.yaml's version is not in GHCR yet -- a workflow edit never
 # overwrites an already-published version.
+#
+# Nothing is pushed unless the static tests (test.yaml) pass first.
 on:
   push:
     tags:
@@ -22,7 +24,11 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yaml
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -53,6 +53,9 @@ Both run in containers (`KUBECONFORM_IMAGE`, `HELM_UNITTEST_IMAGE`), so only `he
 run the parts on their own. A new chart capability should come with a new
 `ci/<name>-values.yaml` and a suite in `tests/`.
 
+In CI, `.github/workflows/test.yaml` runs `make test` on pull requests and on pushes to
+`main`. The publish workflow calls it first, so nothing reaches GHCR unless the tests pass.
+
 This validates shape and rendering, not behavior: it can't tell that the Rollout controller
 actually shifts traffic. That needs a real cluster (Istio, Argo Rollouts, Prometheus).
 
@@ -104,6 +107,8 @@ version isn't in GHCR yet; an already-published version is never overwritten.
 `make release` requires a clean working tree on `main`, a plain `X.Y.Z` version that is not
 lower than the current one, and a tag that doesn't exist yet. If `VERSION` already equals
 `Chart.yaml`'s version, it only creates the tag.
+
+Before pushing, the workflow runs the static tests (see Testing) and only continues if they pass.
 
 The workflow authenticates with the built-in `GITHUB_TOKEN`. New GHCR packages start
 private; make the package public once in its GitHub settings if consumers need anonymous

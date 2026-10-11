@@ -1,0 +1,32 @@
+name: Test chart
+
+# Static tests (`make test`): every ci/ scenario is linted, rendered and
+# schema-validated with kubeconform, and the tests/ unit suites run with
+# helm-unittest. No cluster needed; kubeconform and helm-unittest run in
+# containers, same as locally.
+#
+# Also called by publish-chart.yaml, so nothing is pushed to GHCR unless these
+# pass.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Helm as the helm-unittest image, so CI and `make test` agree.
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - name: Test
+        run: make test
