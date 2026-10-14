@@ -83,12 +83,14 @@ test-invalid:
 	done
 
 # Fails when no test ran at all: a green run with "0 total" proves nothing.
-# The mount is read-write on purpose: helm-unittest tries to mkdir
-# tests/__snapshot__, and with a :ro mount that failed on GitHub's runners
-# ("read-only file system") although it passed locally.
+# helm-unittest creates tests/__snapshot__, and its image runs as uid 1000, so
+# the container runs as the caller's uid/gid instead: with a checkout owned by
+# another uid (GitHub's runner is 1001) it failed with "permission denied" on
+# all suites, and with a :ro mount with "read-only file system". HOME is set
+# because Helm needs a writable cache dir under an arbitrary uid.
 test-unit:
 	@command -v docker >/dev/null || { echo "docker is required to run helm-unittest"; exit 1; }
-	@out=$$(docker run --rm -v "$(abspath $(CHART_DIR))":/apps $(HELM_UNITTEST_IMAGE) . 2>&1); status=$$?; \
+	@out=$$(docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(abspath $(CHART_DIR))":/apps $(HELM_UNITTEST_IMAGE) . 2>&1); status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -Eq 'Tests:.* [1-9][0-9]* total' || { echo "!! helm-unittest ran zero tests"; exit 1; }
